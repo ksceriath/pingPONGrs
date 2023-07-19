@@ -26,17 +26,18 @@ const WINDOW_WIDTH: f32 = 1600.;
 const PEDAL_WIDTH: f32 = 20.;
 const PEDAL_LENGTH: f32 = 150.;
 const PEDAL_GUTTER: f32 = 20.;
-const PEDAL_BOUND: f32 = WINDOW_LENGTH/2. -PEDAL_GUTTER- PEDAL_LENGTH / 2.;
-
-const LEFT_PEDAL_X: f32 = -(WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.);
-const LEFT_PEDAL_COLOR: Color = Color::CYAN;
-
-const RIGHT_PEDAL_X: f32 = WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.;
-const RIGHT_PEDAL_COLOR: Color = Color::BISQUE;
+const MAX_PEDAL_VELOCITY: f32 = 5.;
 
 const BALL_RADIUS: f32 = 20.;
 const BALL_COLOR: Color = Color::YELLOW_GREEN;
 const BALL_X: f32 = 0.;
+
+const LEFT_PEDAL_COLOR: Color = Color::CYAN;
+const RIGHT_PEDAL_COLOR: Color = Color::BISQUE;
+
+const PEDAL_BOUND: f32 = WINDOW_LENGTH / 2. - PEDAL_GUTTER - PEDAL_LENGTH / 2.;
+const LEFT_PEDAL_X: f32 = -(WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.);
+const RIGHT_PEDAL_X: f32 = WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.;
 
 struct TheGame;
 
@@ -102,7 +103,6 @@ fn move_entities(mut query: Query<(&mut Transform, &Velocity, Option<&Pedal>)>) 
 
         if maybe_pedal.is_some() {
             transform.translation.y = bound_check_pedals(transform.translation.y);
-            println!("bound checking for pedal at {}",transform.translation.y);
         }
     }
 }
@@ -122,13 +122,11 @@ fn keyboard_event_arrow(
     mut query: Query<&mut Velocity, With<PedalRight>>,
 ) {
     if let Ok(mut velocity) = query.get_single_mut() {
-        if key_code.pressed(KeyCode::Up) {
-            velocity.y = 5.
-        } else if key_code.pressed(KeyCode::Down) {
-            velocity.y = -5.;
-        } else {
-            velocity.y = 0.;
-        }
+        velocity.y = compute_velocity(
+            velocity.y,
+            key_code.pressed(KeyCode::Up),
+            key_code.pressed(KeyCode::Down),
+        );
     }
 }
 
@@ -137,13 +135,21 @@ fn keyboard_event_ws(
     mut query: Query<&mut Velocity, With<PedalLeft>>,
 ) {
     if let Ok(mut velocity) = query.get_single_mut() {
-        if key_code.pressed(KeyCode::W) {
-            velocity.y = 5.
-        } else if key_code.pressed(KeyCode::S) {
-            velocity.y = -5.;
-        } else {
-            velocity.y = 0.;
-        }
+        velocity.y = compute_velocity(
+            velocity.y,
+            key_code.pressed(KeyCode::W),
+            key_code.pressed(KeyCode::S),
+        );
+    }
+}
+
+fn compute_velocity(velocity: f32, accelerate: bool, decelerate: bool) -> f32 {
+    if accelerate {
+        (velocity + 1.).min(MAX_PEDAL_VELOCITY)
+    } else if decelerate {
+        (velocity - 1.).max(-MAX_PEDAL_VELOCITY)
+    } else {
+        0.
     }
 }
 
