@@ -13,20 +13,25 @@ fn window_plugin() -> WindowPlugin {
     WindowPlugin {
         primary_window: Some(Window {
             title: "Ping PONG".to_string(),
-            resolution: (1600., 700.).into(),
+            resolution: (WINDOW_WIDTH, WINDOW_LENGTH).into(),
             ..Default::default()
         }),
         ..Default::default()
     }
 }
 
+const WINDOW_LENGTH: f32 = 700.;
+const WINDOW_WIDTH: f32 = 1600.;
+
 const PEDAL_WIDTH: f32 = 20.;
 const PEDAL_LENGTH: f32 = 150.;
+const PEDAL_GUTTER: f32 = 20.;
+const PEDAL_BOUND: f32 = WINDOW_LENGTH/2. -PEDAL_GUTTER- PEDAL_LENGTH / 2.;
 
-const LEFT_PEDAL_X: f32 = -750.;
+const LEFT_PEDAL_X: f32 = -(WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.);
 const LEFT_PEDAL_COLOR: Color = Color::CYAN;
 
-const RIGHT_PEDAL_X: f32 = 750.;
+const RIGHT_PEDAL_X: f32 = WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.;
 const RIGHT_PEDAL_COLOR: Color = Color::BISQUE;
 
 const BALL_RADIUS: f32 = 20.;
@@ -67,12 +72,14 @@ fn spawn_entities(
     commands.spawn((
         pedal_sprite(LEFT_PEDAL_COLOR, LEFT_PEDAL_X),
         PedalLeft,
+        Pedal,
         Velocity { x: 0., y: 0. },
     ));
 
     commands.spawn((
         pedal_sprite(RIGHT_PEDAL_COLOR, RIGHT_PEDAL_X),
         PedalRight,
+        Pedal,
         Velocity { x: 0., y: 0. },
     ));
 
@@ -88,10 +95,25 @@ fn spawn_entities(
     ));
 }
 
-fn move_entities(mut query: Query<(&mut Transform, &Velocity)>) {
-    for (mut transform, velocity) in query.iter_mut() {
+fn move_entities(mut query: Query<(&mut Transform, &Velocity, Option<&Pedal>)>) {
+    for (mut transform, velocity, maybe_pedal) in query.iter_mut() {
         let displacement = Vec3::new(velocity.x, velocity.y, 0.);
-        transform.translation = transform.translation.mul_add(Vec3::splat(1.), displacement);
+        transform.translation += displacement;
+
+        if maybe_pedal.is_some() {
+            transform.translation.y = bound_check_pedals(transform.translation.y);
+            println!("bound checking for pedal at {}",transform.translation.y);
+        }
+    }
+}
+
+fn bound_check_pedals(pedal_location: f32) -> f32 {
+    if pedal_location > PEDAL_BOUND {
+        PEDAL_BOUND
+    } else if pedal_location < -PEDAL_BOUND {
+        -PEDAL_BOUND
+    } else {
+        pedal_location
     }
 }
 
@@ -130,6 +152,9 @@ struct PedalLeft;
 
 #[derive(Component)]
 struct PedalRight;
+
+#[derive(Component)]
+struct Pedal;
 
 #[derive(Component)]
 struct Ball;
