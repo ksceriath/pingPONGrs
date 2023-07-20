@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::sprite::collide_aabb::{collide, Collision};
 use bevy::sprite::MaterialMesh2dBundle;
 
 fn main() {
@@ -23,6 +24,11 @@ fn window_plugin() -> WindowPlugin {
 const WINDOW_LENGTH: f32 = 700.;
 const WINDOW_WIDTH: f32 = 1600.;
 
+const BORDER_LENGTH: f32 = 1560.;
+const BORDER_THICKNESS: f32 = 5.;
+const TOP_BORDER_Y: f32 = 330.;
+const BOTTOM_BORDER_Y: f32 = -330.;
+
 const PEDAL_WIDTH: f32 = 20.;
 const PEDAL_LENGTH: f32 = 150.;
 const PEDAL_GUTTER: f32 = 20.;
@@ -46,7 +52,8 @@ impl Plugin for TheGame {
         app.add_systems(Startup, spawn_entities)
             .add_systems(Update, move_entities)
             .add_systems(Update, keyboard_event_arrow)
-            .add_systems(Update, keyboard_event_ws);
+            .add_systems(Update, keyboard_event_ws)
+            .add_systems(Update, ball_collision);
     }
 }
 
@@ -74,14 +81,18 @@ fn spawn_entities(
         pedal_sprite(LEFT_PEDAL_COLOR, LEFT_PEDAL_X),
         PedalLeft,
         Pedal,
+        Collider,
         Velocity { x: 0., y: 0. },
+        Dimensions(Vec2::new(PEDAL_WIDTH, PEDAL_LENGTH)),
     ));
 
     commands.spawn((
         pedal_sprite(RIGHT_PEDAL_COLOR, RIGHT_PEDAL_X),
         PedalRight,
         Pedal,
+        Collider,
         Velocity { x: 0., y: 0. },
+        Dimensions(Vec2::new(PEDAL_WIDTH, PEDAL_LENGTH)),
     ));
 
     commands.spawn((
@@ -93,6 +104,41 @@ fn spawn_entities(
         },
         Ball,
         Velocity::default(),
+        Dimensions(Vec2::new(BALL_RADIUS, BALL_RADIUS)),
+    ));
+
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: Color::WHITE,
+                custom_size: Some(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
+                ..default()
+            },
+            transform: Transform {
+                translation: Vec3::new(0., TOP_BORDER_Y, 0.),
+                ..default()
+            },
+            ..default()
+        },
+        Collider,
+        Dimensions(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
+    ));
+
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: Color::WHITE,
+                custom_size: Some(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
+                ..default()
+            },
+            transform: Transform {
+                translation: Vec3::new(0., BOTTOM_BORDER_Y, 0.),
+                ..default()
+            },
+            ..default()
+        },
+        Collider,
+        Dimensions(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
     ));
 }
 
@@ -153,6 +199,30 @@ fn compute_velocity(velocity: f32, accelerate: bool, decelerate: bool) -> f32 {
     }
 }
 
+fn ball_collision(
+    colliders: Query<(&Transform, &Dimensions), With<Collider>>,
+    mut ball: Query<(&mut Velocity, &Transform, &Dimensions), With<Ball>>,
+) {
+    if let Ok((mut ball_velocity, ball_transform, ball_dimensions)) = ball.get_single_mut() {
+        for (collider_transform, collider_dimensions) in colliders.iter() {
+            match collide(
+                collider_transform.translation,
+                collider_dimensions.0,
+                ball_transform.translation,
+                ball_dimensions.0,
+            ) {
+                Some(Collision::Top) | Some(Collision::Bottom) => {
+                    ball_velocity.y = -ball_velocity.y
+                }
+                Some(Collision::Left) | Some(Collision::Right) => {
+                    ball_velocity.x = -ball_velocity.x
+                }
+                _ => (),
+            }
+        }
+    }
+}
+
 #[derive(Component)]
 struct PedalLeft;
 
@@ -170,6 +240,12 @@ struct Velocity {
     x: f32,
     y: f32,
 }
+
+#[derive(Component)]
+struct Collider;
+
+#[derive(Component)]
+struct Dimensions(Vec2);
 
 impl Velocity {
     fn default() -> Velocity {
