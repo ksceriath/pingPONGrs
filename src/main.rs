@@ -32,11 +32,17 @@ const BOTTOM_BORDER_Y: f32 = -330.;
 const PEDAL_WIDTH: f32 = 20.;
 const PEDAL_LENGTH: f32 = 150.;
 const PEDAL_GUTTER: f32 = 20.;
-const MAX_PEDAL_VELOCITY: f32 = 5.;
+const MAX_PEDAL_VELOCITY: f32 = 10.;
+const PEDAL_VELOCITY_INCREMENTS: f32 = 4.;
 
 const BALL_RADIUS: f32 = 20.;
 const BALL_COLOR: Color = Color::YELLOW_GREEN;
 const BALL_X: f32 = 0.;
+
+const BALL_START_SPEED_X: f32 = -5.;
+const BALL_START_SPEED_Y: f32 = 3.;
+const BOUNCE_SPEED_BONUS: f32 = 0.75;
+const MAX_BALL_SPEED: f32 = 15.;
 
 const LEFT_PEDAL_COLOR: Color = Color::CYAN;
 const RIGHT_PEDAL_COLOR: Color = Color::BISQUE;
@@ -93,7 +99,7 @@ fn spawn_entities(
         PedalLeft,
         Pedal,
         Collider,
-        Velocity { x: 0., y: 0. },
+        Velocity::zero(),
         Dimensions(Vec2::new(PEDAL_WIDTH, PEDAL_LENGTH)),
     ));
 
@@ -102,7 +108,7 @@ fn spawn_entities(
         PedalRight,
         Pedal,
         Collider,
-        Velocity { x: 0., y: 0. },
+        Velocity::zero(),
         Dimensions(Vec2::new(PEDAL_WIDTH, PEDAL_LENGTH)),
     ));
 
@@ -114,7 +120,7 @@ fn spawn_entities(
             ..default()
         },
         Ball,
-        Velocity::default(),
+        Velocity::zero(),
         Dimensions(Vec2::new(BALL_RADIUS, BALL_RADIUS)),
     ));
 
@@ -237,20 +243,22 @@ fn keyboard_event_ws(
 
 fn compute_velocity(velocity: f32, accelerate: bool, decelerate: bool) -> f32 {
     if accelerate {
-        (velocity + 1.).min(MAX_PEDAL_VELOCITY)
+        (velocity + PEDAL_VELOCITY_INCREMENTS).min(MAX_PEDAL_VELOCITY)
     } else if decelerate {
-        (velocity - 1.).max(-MAX_PEDAL_VELOCITY)
+        (velocity - PEDAL_VELOCITY_INCREMENTS).max(-MAX_PEDAL_VELOCITY)
     } else {
         0.
     }
 }
 
 fn ball_collision(
-    colliders: Query<(&Transform, &Dimensions), With<Collider>>,
-    mut ball: Query<(&mut Velocity, &Transform, &Dimensions), With<Ball>>,
+    colliders: Query<(&Transform, &Dimensions, Option<&Velocity>), (With<Collider>, Without<Ball>)>,
+    mut ball: Query<(&mut Velocity, &Transform, &Dimensions), (With<Ball>, Without<Collider>)>,
 ) {
     if let Ok((mut ball_velocity, ball_transform, ball_dimensions)) = ball.get_single_mut() {
-        for (collider_transform, collider_dimensions) in colliders.iter() {
+        for (collider_transform, collider_dimensions, maybe_velocity) in colliders.iter() {
+            let collider_velocity = maybe_velocity.unwrap_or(&Velocity { x: 0., y: 0. });
+            let relative_velocity_y = ball_velocity.y - collider_velocity.y;
             match collide(
                 collider_transform.translation,
                 collider_dimensions.0,
@@ -258,13 +266,20 @@ fn ball_collision(
                 ball_dimensions.0,
             ) {
                 Some(Collision::Top) | Some(Collision::Bottom) => {
-                    ball_velocity.y = -ball_velocity.y
+                    ball_velocity.y = -relative_velocity_y;
                 }
-                Some(Collision::Left) | Some(Collision::Right) => {
-                    ball_velocity.x = -ball_velocity.x
+                Some(Collision::Left) => {
+                    ball_velocity.y += collider_velocity.y;
+                    ball_velocity.x = -ball_velocity.x + BOUNCE_SPEED_BONUS;
+                }
+                Some(Collision::Right) => {
+                    ball_velocity.y += collider_velocity.y;
+                    ball_velocity.x = -ball_velocity.x - BOUNCE_SPEED_BONUS;
                 }
                 _ => (),
             }
+            ball_velocity.x = ball_velocity.x.clamp(-MAX_BALL_SPEED, MAX_BALL_SPEED);
+            ball_velocity.y = ball_velocity.y.clamp(-MAX_BALL_SPEED, MAX_BALL_SPEED);
         }
     }
 }
@@ -295,7 +310,10 @@ struct Velocity {
 
 impl Velocity {
     fn default() -> Velocity {
-        Velocity { x: -5., y: -3. }
+        Velocity {
+            x: BALL_START_SPEED_X,
+            y: BALL_START_SPEED_Y,
+        }
     }
 
     fn zero() -> Velocity {
