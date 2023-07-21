@@ -49,11 +49,22 @@ struct TheGame;
 
 impl Plugin for TheGame {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_entities)
-            .add_systems(Update, move_entities)
-            .add_systems(Update, keyboard_event_arrow)
-            .add_systems(Update, keyboard_event_ws)
-            .add_systems(Update, ball_collision);
+        app.add_state::<GameState>()
+            .add_systems(Startup, spawn_entities)
+            .add_systems(OnEnter(GameState::Stop), reset_ball)
+            .add_systems(OnEnter(GameState::Play), set_ball_velocity)
+            .add_systems(Update, play_game.run_if(in_state(GameState::Stop)))
+            .add_systems(
+                Update,
+                (
+                    move_entities,
+                    keyboard_event_arrow,
+                    keyboard_event_ws,
+                    ball_collision,
+                    game_over,
+                )
+                    .run_if(in_state(GameState::Play)),
+            );
     }
 }
 
@@ -163,6 +174,41 @@ fn bound_check_pedals(pedal_location: f32) -> f32 {
     }
 }
 
+fn game_over(
+    mut query: Query<&Transform, With<Ball>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    if let Ok(transform) = query.get_single_mut() {
+        if transform.translation.x < -WINDOW_WIDTH / 2.
+            || transform.translation.x > WINDOW_WIDTH / 2.
+        {
+            next_state.set(GameState::Stop);
+        }
+    }
+}
+
+fn reset_ball(mut query: Query<(&mut Velocity, &mut Transform), With<Ball>>) {
+    if let Ok((mut velocity, mut transform)) = query.get_single_mut() {
+        transform.translation = Vec3::new(BALL_X, 0., 0.);
+        velocity.x = 0.;
+        velocity.y = 0.;
+    }
+}
+
+fn play_game(key_code: Res<Input<KeyCode>>, mut next_state: ResMut<NextState<GameState>>) {
+    if key_code.pressed(KeyCode::Space) {
+        next_state.set(GameState::Play);
+    }
+}
+
+fn set_ball_velocity(mut query: Query<&mut Velocity, With<Ball>>) {
+    if let Ok(mut velocity) = query.get_single_mut() {
+        let default_velocity = Velocity::default();
+        velocity.x = default_velocity.x;
+        velocity.y = default_velocity.y;
+    }
+}
+
 fn keyboard_event_arrow(
     key_code: Res<Input<KeyCode>>,
     mut query: Query<&mut Velocity, With<PedalRight>>,
@@ -236,19 +282,30 @@ struct Pedal;
 struct Ball;
 
 #[derive(Component)]
-struct Velocity {
-    x: f32,
-    y: f32,
-}
-
-#[derive(Component)]
 struct Collider;
 
 #[derive(Component)]
 struct Dimensions(Vec2);
 
+#[derive(Component)]
+struct Velocity {
+    x: f32,
+    y: f32,
+}
+
 impl Velocity {
     fn default() -> Velocity {
         Velocity { x: -5., y: -3. }
     }
+
+    fn zero() -> Velocity {
+        Velocity { x: 0., y: 0. }
+    }
+}
+
+#[derive(States, PartialEq, Eq, Debug, Clone, Hash, Default)]
+enum GameState {
+    #[default]
+    Stop,
+    Play,
 }
