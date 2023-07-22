@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::sprite::collide_aabb::{collide, Collision};
 use bevy::sprite::MaterialMesh2dBundle;
+use bevy::window::{WindowMode, WindowResolution};
 
 fn main() {
     App::new()
@@ -15,8 +16,7 @@ fn window_plugin() -> WindowPlugin {
     WindowPlugin {
         primary_window: Some(Window {
             title: "Ping PONG".to_string(),
-            mode: bevy::window::WindowMode::BorderlessFullscreen,
-            // resolution: (WINDOW_WIDTH, WINDOW_LENGTH).into(),
+            mode: WindowMode::BorderlessFullscreen,
             ..Default::default()
         }),
         ..Default::default()
@@ -25,7 +25,6 @@ fn window_plugin() -> WindowPlugin {
 
 #[derive(Resource)]
 struct GameConfig {
-    window_length: f32,
     window_width: f32,
 
     border_length: f32,
@@ -35,7 +34,9 @@ struct GameConfig {
 
     pedal_width: f32,
     pedal_length: f32,
-    pedal_gutter: f32,
+    pedal_bound: f32,
+    left_pedal_x: f32,
+    right_pedal_x: f32,
     max_pedal_velocity: f32,
     pedal_velocity_increments: f32,
 
@@ -46,26 +47,39 @@ struct GameConfig {
     ball_start_speed_x: f32,
     ball_start_speed_y: f32,
     bounce_speed_bonus: f32,
-    max_ball_speed: f32,
+    max_ball_speed_x: f32,
+    max_ball_speed_y: f32,
 
     left_pedal_color: Color,
     right_pedal_color: Color,
 }
 
 impl GameConfig {
-    fn new() -> GameConfig {
+    fn new(resolution: &WindowResolution) -> GameConfig {
+        let window_length = resolution.height();
+        let window_width = resolution.width();
+
+        let pedal_width = 20.;
+        let pedal_length = 150.;
+        let pedal_gutter = 20.;
+
+        let pedal_bound = window_length / 2. - pedal_gutter - pedal_length / 2.;
+        let left_pedal_x = -(window_width / 2. - pedal_gutter - pedal_width / 2.);
+        let right_pedal_x = window_width / 2. - pedal_gutter - pedal_width / 2.;
+
         GameConfig {
-            window_length: 700.,
-            window_width: 700.,
+            window_width,
 
-            border_length: 1560.,
+            border_length: window_width - 40.,
             border_thickness: 5.,
-            top_border_y: 330.,
-            bottom_border_y: -330.,
+            top_border_y: window_length / 2. - 20.,
+            bottom_border_y: -(window_length / 2. - 20.),
 
-            pedal_width: 20.,
-            pedal_length: 150.,
-            pedal_gutter: 20.,
+            pedal_width,
+            pedal_length,
+            pedal_bound,
+            left_pedal_x,
+            right_pedal_x,
             max_pedal_velocity: 10.,
             pedal_velocity_increments: 4.,
 
@@ -76,27 +90,16 @@ impl GameConfig {
             ball_start_speed_x: -5.,
             ball_start_speed_y: 3.,
             bounce_speed_bonus: 0.75,
-            max_ball_speed: 15.,
+            max_ball_speed_x: 15.,
+            max_ball_speed_y: 10.,
 
             left_pedal_color: Color::CYAN,
             right_pedal_color: Color::BISQUE,
         }
     }
 
-    fn pedal_bound(&self) -> f32 {
-        self.window_length / 2. - self.pedal_gutter - self.pedal_length / 2.
-    }
-
-    fn left_pedal_x(&self) -> f32 {
-        -(self.window_width / 2. - self.pedal_gutter - self.pedal_width / 2.)
-    }
-
-    fn right_pedal_x(&self) -> f32 {
-        self.window_width / 2. - self.pedal_gutter - self.pedal_width / 2.
-    }
-
-    fn init_game_config(mut commands: Commands) {
-        commands.insert_resource(GameConfig::new());
+    fn init_game_config(mut commands: Commands, query: Query<&Window>) {
+        commands.insert_resource(GameConfig::new(&query.single().resolution));
     }
 }
 
@@ -145,7 +148,7 @@ fn spawn_entities(
     };
 
     commands.spawn((
-        pedal_sprite(config.left_pedal_color, config.left_pedal_x()),
+        pedal_sprite(config.left_pedal_color, config.left_pedal_x),
         PedalLeft,
         Pedal,
         Collider,
@@ -154,7 +157,7 @@ fn spawn_entities(
     ));
 
     commands.spawn((
-        pedal_sprite(config.right_pedal_color, config.right_pedal_x()),
+        pedal_sprite(config.right_pedal_color, config.right_pedal_x),
         PedalRight,
         Pedal,
         Collider,
@@ -223,7 +226,7 @@ fn move_entities(
             transform.translation.y = transform
                 .translation
                 .y
-                .clamp(-config.pedal_bound(), config.pedal_bound());
+                .clamp(-config.pedal_bound, config.pedal_bound);
         }
     }
 }
@@ -341,12 +344,10 @@ fn ball_collision(
                 }
                 _ => (),
             }
-            ball_velocity.x = ball_velocity
-                .x
-                .clamp(-config.max_ball_speed, config.max_ball_speed);
-            ball_velocity.y = ball_velocity
-                .y
-                .clamp(-config.max_ball_speed, config.max_ball_speed);
+            let vx_max = config.max_ball_speed_x;
+            let vy_max = config.max_ball_speed_y;
+            ball_velocity.x = ball_velocity.x.clamp(-vx_max, vx_max);
+            ball_velocity.y = ball_velocity.y.clamp(-vy_max, vy_max);
         }
     }
 }
