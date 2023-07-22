@@ -5,6 +5,7 @@ use bevy::sprite::MaterialMesh2dBundle;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(window_plugin()))
+        .add_systems(PreStartup, GameConfig::init_game_config)
         .add_systems(Update, bevy::window::close_on_esc)
         .add_plugins(TheGame)
         .run();
@@ -14,42 +15,90 @@ fn window_plugin() -> WindowPlugin {
     WindowPlugin {
         primary_window: Some(Window {
             title: "Ping PONG".to_string(),
-            resolution: (WINDOW_WIDTH, WINDOW_LENGTH).into(),
+            mode: bevy::window::WindowMode::BorderlessFullscreen,
+            // resolution: (WINDOW_WIDTH, WINDOW_LENGTH).into(),
             ..Default::default()
         }),
         ..Default::default()
     }
 }
 
-const WINDOW_LENGTH: f32 = 700.;
-const WINDOW_WIDTH: f32 = 1600.;
+#[derive(Resource)]
+struct GameConfig {
+    window_length: f32,
+    window_width: f32,
 
-const BORDER_LENGTH: f32 = 1560.;
-const BORDER_THICKNESS: f32 = 5.;
-const TOP_BORDER_Y: f32 = 330.;
-const BOTTOM_BORDER_Y: f32 = -330.;
+    border_length: f32,
+    border_thickness: f32,
+    top_border_y: f32,
+    bottom_border_y: f32,
 
-const PEDAL_WIDTH: f32 = 20.;
-const PEDAL_LENGTH: f32 = 150.;
-const PEDAL_GUTTER: f32 = 20.;
-const MAX_PEDAL_VELOCITY: f32 = 10.;
-const PEDAL_VELOCITY_INCREMENTS: f32 = 4.;
+    pedal_width: f32,
+    pedal_length: f32,
+    pedal_gutter: f32,
+    max_pedal_velocity: f32,
+    pedal_velocity_increments: f32,
 
-const BALL_RADIUS: f32 = 20.;
-const BALL_COLOR: Color = Color::YELLOW_GREEN;
-const BALL_X: f32 = 0.;
+    ball_radius: f32,
+    ball_color: Color,
+    ball_x: f32,
 
-const BALL_START_SPEED_X: f32 = -5.;
-const BALL_START_SPEED_Y: f32 = 3.;
-const BOUNCE_SPEED_BONUS: f32 = 0.75;
-const MAX_BALL_SPEED: f32 = 15.;
+    ball_start_speed_x: f32,
+    ball_start_speed_y: f32,
+    bounce_speed_bonus: f32,
+    max_ball_speed: f32,
 
-const LEFT_PEDAL_COLOR: Color = Color::CYAN;
-const RIGHT_PEDAL_COLOR: Color = Color::BISQUE;
+    left_pedal_color: Color,
+    right_pedal_color: Color,
+}
 
-const PEDAL_BOUND: f32 = WINDOW_LENGTH / 2. - PEDAL_GUTTER - PEDAL_LENGTH / 2.;
-const LEFT_PEDAL_X: f32 = -(WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.);
-const RIGHT_PEDAL_X: f32 = WINDOW_WIDTH / 2. - PEDAL_GUTTER - PEDAL_WIDTH / 2.;
+impl GameConfig {
+    fn new() -> GameConfig {
+        GameConfig {
+            window_length: 700.,
+            window_width: 700.,
+
+            border_length: 1560.,
+            border_thickness: 5.,
+            top_border_y: 330.,
+            bottom_border_y: -330.,
+
+            pedal_width: 20.,
+            pedal_length: 150.,
+            pedal_gutter: 20.,
+            max_pedal_velocity: 10.,
+            pedal_velocity_increments: 4.,
+
+            ball_radius: 20.,
+            ball_color: Color::YELLOW_GREEN,
+            ball_x: 0.,
+
+            ball_start_speed_x: -5.,
+            ball_start_speed_y: 3.,
+            bounce_speed_bonus: 0.75,
+            max_ball_speed: 15.,
+
+            left_pedal_color: Color::CYAN,
+            right_pedal_color: Color::BISQUE,
+        }
+    }
+
+    fn pedal_bound(&self) -> f32 {
+        self.window_length / 2. - self.pedal_gutter - self.pedal_length / 2.
+    }
+
+    fn left_pedal_x(&self) -> f32 {
+        -(self.window_width / 2. - self.pedal_gutter - self.pedal_width / 2.)
+    }
+
+    fn right_pedal_x(&self) -> f32 {
+        self.window_width / 2. - self.pedal_gutter - self.pedal_width / 2.
+    }
+
+    fn init_game_config(mut commands: Commands) {
+        commands.insert_resource(GameConfig::new());
+    }
+}
 
 struct TheGame;
 
@@ -78,13 +127,14 @@ fn spawn_entities(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    config: Res<GameConfig>,
 ) {
     commands.spawn(Camera2dBundle::default());
 
     let pedal_sprite = |color: Color, x: f32| SpriteBundle {
         sprite: Sprite {
             color,
-            custom_size: Some(Vec2::new(PEDAL_WIDTH, PEDAL_LENGTH)),
+            custom_size: Some(Vec2::new(config.pedal_width, config.pedal_length)),
             ..default()
         },
         transform: Transform {
@@ -95,107 +145,109 @@ fn spawn_entities(
     };
 
     commands.spawn((
-        pedal_sprite(LEFT_PEDAL_COLOR, LEFT_PEDAL_X),
+        pedal_sprite(config.left_pedal_color, config.left_pedal_x()),
         PedalLeft,
         Pedal,
         Collider,
         Velocity::zero(),
-        Dimensions(Vec2::new(PEDAL_WIDTH, PEDAL_LENGTH)),
+        Dimensions(Vec2::new(config.pedal_width, config.pedal_length)),
     ));
 
     commands.spawn((
-        pedal_sprite(RIGHT_PEDAL_COLOR, RIGHT_PEDAL_X),
+        pedal_sprite(config.right_pedal_color, config.right_pedal_x()),
         PedalRight,
         Pedal,
         Collider,
         Velocity::zero(),
-        Dimensions(Vec2::new(PEDAL_WIDTH, PEDAL_LENGTH)),
+        Dimensions(Vec2::new(config.pedal_width, config.pedal_length)),
     ));
 
     commands.spawn((
         MaterialMesh2dBundle {
-            mesh: meshes.add(shape::Circle::new(BALL_RADIUS).into()).into(),
-            material: materials.add(ColorMaterial::from(BALL_COLOR)),
-            transform: Transform::from_translation(Vec3::new(BALL_X, 0., 0.)),
+            mesh: meshes
+                .add(shape::Circle::new(config.ball_radius).into())
+                .into(),
+            material: materials.add(ColorMaterial::from(config.ball_color)),
+            transform: Transform::from_translation(Vec3::new(config.ball_x, 0., 0.)),
             ..default()
         },
         Ball,
         Velocity::zero(),
-        Dimensions(Vec2::new(BALL_RADIUS, BALL_RADIUS)),
+        Dimensions(Vec2::new(config.ball_radius, config.ball_radius)),
     ));
 
     commands.spawn((
         SpriteBundle {
             sprite: Sprite {
                 color: Color::WHITE,
-                custom_size: Some(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
+                custom_size: Some(Vec2::new(config.border_length, config.border_thickness)),
                 ..default()
             },
             transform: Transform {
-                translation: Vec3::new(0., TOP_BORDER_Y, 0.),
+                translation: Vec3::new(0., config.top_border_y, 0.),
                 ..default()
             },
             ..default()
         },
         Collider,
-        Dimensions(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
+        Dimensions(Vec2::new(config.border_length, config.border_thickness)),
     ));
 
     commands.spawn((
         SpriteBundle {
             sprite: Sprite {
                 color: Color::WHITE,
-                custom_size: Some(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
+                custom_size: Some(Vec2::new(config.border_length, config.border_thickness)),
                 ..default()
             },
             transform: Transform {
-                translation: Vec3::new(0., BOTTOM_BORDER_Y, 0.),
+                translation: Vec3::new(0., config.bottom_border_y, 0.),
                 ..default()
             },
             ..default()
         },
         Collider,
-        Dimensions(Vec2::new(BORDER_LENGTH, BORDER_THICKNESS)),
+        Dimensions(Vec2::new(config.border_length, config.border_thickness)),
     ));
 }
 
-fn move_entities(mut query: Query<(&mut Transform, &Velocity, Option<&Pedal>)>) {
+fn move_entities(
+    mut query: Query<(&mut Transform, &Velocity, Option<&Pedal>)>,
+    config: Res<GameConfig>,
+) {
     for (mut transform, velocity, maybe_pedal) in query.iter_mut() {
         let displacement = Vec3::new(velocity.x, velocity.y, 0.);
         transform.translation += displacement;
 
         if maybe_pedal.is_some() {
-            transform.translation.y = bound_check_pedals(transform.translation.y);
+            transform.translation.y = transform
+                .translation
+                .y
+                .clamp(-config.pedal_bound(), config.pedal_bound());
         }
-    }
-}
-
-fn bound_check_pedals(pedal_location: f32) -> f32 {
-    if pedal_location > PEDAL_BOUND {
-        PEDAL_BOUND
-    } else if pedal_location < -PEDAL_BOUND {
-        -PEDAL_BOUND
-    } else {
-        pedal_location
     }
 }
 
 fn game_over(
     mut query: Query<&Transform, With<Ball>>,
     mut next_state: ResMut<NextState<GameState>>,
+    config: Res<GameConfig>,
 ) {
     if let Ok(transform) = query.get_single_mut() {
-        if transform.translation.x < -WINDOW_WIDTH / 2.
-            || transform.translation.x > WINDOW_WIDTH / 2.
+        if transform.translation.x < -config.window_width / 2.
+            || transform.translation.x > config.window_width / 2.
         {
             next_state.set(GameState::Stop);
         }
     }
 }
 
-fn reset_ball(mut query: Query<(&mut Velocity, &mut Transform), With<Ball>>) {
+fn reset_ball(
+    mut query: Query<(&mut Velocity, &mut Transform), With<Ball>>,
+    config: Res<GameConfig>,
+) {
     if let Ok((mut velocity, mut transform)) = query.get_single_mut() {
-        transform.translation = Vec3::new(BALL_X, 0., 0.);
+        transform.translation = Vec3::new(config.ball_x, 0., 0.);
         velocity.x = 0.;
         velocity.y = 0.;
     }
@@ -207,23 +259,24 @@ fn play_game(key_code: Res<Input<KeyCode>>, mut next_state: ResMut<NextState<Gam
     }
 }
 
-fn set_ball_velocity(mut query: Query<&mut Velocity, With<Ball>>) {
+fn set_ball_velocity(mut query: Query<&mut Velocity, With<Ball>>, config: Res<GameConfig>) {
     if let Ok(mut velocity) = query.get_single_mut() {
-        let default_velocity = Velocity::default();
-        velocity.x = default_velocity.x;
-        velocity.y = default_velocity.y;
+        velocity.x = config.ball_start_speed_x;
+        velocity.y = config.ball_start_speed_y;
     }
 }
 
 fn keyboard_event_arrow(
     key_code: Res<Input<KeyCode>>,
     mut query: Query<&mut Velocity, With<PedalRight>>,
+    config: Res<GameConfig>,
 ) {
     if let Ok(mut velocity) = query.get_single_mut() {
         velocity.y = compute_velocity(
             velocity.y,
             key_code.pressed(KeyCode::Up),
             key_code.pressed(KeyCode::Down),
+            config,
         );
     }
 }
@@ -231,31 +284,41 @@ fn keyboard_event_arrow(
 fn keyboard_event_ws(
     key_code: Res<Input<KeyCode>>,
     mut query: Query<&mut Velocity, With<PedalLeft>>,
+    config: Res<GameConfig>,
 ) {
     if let Ok(mut velocity) = query.get_single_mut() {
         velocity.y = compute_velocity(
             velocity.y,
             key_code.pressed(KeyCode::W),
             key_code.pressed(KeyCode::S),
+            config,
         );
     }
 }
 
-fn compute_velocity(velocity: f32, accelerate: bool, decelerate: bool) -> f32 {
+fn compute_velocity(
+    velocity: f32,
+    accelerate: bool,
+    decelerate: bool,
+    config: Res<GameConfig>,
+) -> f32 {
     if accelerate {
-        (velocity + PEDAL_VELOCITY_INCREMENTS).min(MAX_PEDAL_VELOCITY)
+        (velocity + config.pedal_velocity_increments).min(config.max_pedal_velocity)
     } else if decelerate {
-        (velocity - PEDAL_VELOCITY_INCREMENTS).max(-MAX_PEDAL_VELOCITY)
+        (velocity - config.pedal_velocity_increments).max(-config.max_pedal_velocity)
     } else {
         0.
     }
 }
 
+type OnlyCollider = (With<Collider>, Without<Ball>);
+type OnlyBall = (With<Ball>, Without<Collider>);
 fn ball_collision(
-    colliders: Query<(&Transform, &Dimensions, Option<&Velocity>), (With<Collider>, Without<Ball>)>,
-    mut ball: Query<(&mut Velocity, &Transform, &Dimensions), (With<Ball>, Without<Collider>)>,
+    colliders: Query<(&Transform, &Dimensions, Option<&Velocity>), OnlyCollider>,
+    mut ball: Query<(&Transform, &Dimensions, &mut Velocity), OnlyBall>,
+    config: Res<GameConfig>,
 ) {
-    if let Ok((mut ball_velocity, ball_transform, ball_dimensions)) = ball.get_single_mut() {
+    if let Ok((ball_transform, ball_dimensions, mut ball_velocity)) = ball.get_single_mut() {
         for (collider_transform, collider_dimensions, maybe_velocity) in colliders.iter() {
             let collider_velocity = maybe_velocity.unwrap_or(&Velocity { x: 0., y: 0. });
             let relative_velocity_y = ball_velocity.y - collider_velocity.y;
@@ -270,16 +333,20 @@ fn ball_collision(
                 }
                 Some(Collision::Left) => {
                     ball_velocity.y += collider_velocity.y;
-                    ball_velocity.x = -ball_velocity.x + BOUNCE_SPEED_BONUS;
+                    ball_velocity.x = -ball_velocity.x + config.bounce_speed_bonus;
                 }
                 Some(Collision::Right) => {
                     ball_velocity.y += collider_velocity.y;
-                    ball_velocity.x = -ball_velocity.x - BOUNCE_SPEED_BONUS;
+                    ball_velocity.x = -ball_velocity.x - config.bounce_speed_bonus;
                 }
                 _ => (),
             }
-            ball_velocity.x = ball_velocity.x.clamp(-MAX_BALL_SPEED, MAX_BALL_SPEED);
-            ball_velocity.y = ball_velocity.y.clamp(-MAX_BALL_SPEED, MAX_BALL_SPEED);
+            ball_velocity.x = ball_velocity
+                .x
+                .clamp(-config.max_ball_speed, config.max_ball_speed);
+            ball_velocity.y = ball_velocity
+                .y
+                .clamp(-config.max_ball_speed, config.max_ball_speed);
         }
     }
 }
@@ -309,13 +376,6 @@ struct Velocity {
 }
 
 impl Velocity {
-    fn default() -> Velocity {
-        Velocity {
-            x: BALL_START_SPEED_X,
-            y: BALL_START_SPEED_Y,
-        }
-    }
-
     fn zero() -> Velocity {
         Velocity { x: 0., y: 0. }
     }
