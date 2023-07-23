@@ -1,7 +1,8 @@
 use bevy::prelude::*;
-use bevy::sprite::collide_aabb::{collide, Collision};
+use bevy::sprite::collide_aabb::collide;
 use bevy::sprite::MaterialMesh2dBundle;
 use bevy::window::{WindowMode, WindowResolution};
+use rand::Rng;
 
 fn main() {
     App::new()
@@ -44,8 +45,6 @@ struct GameConfig {
     ball_color: Color,
     ball_x: f32,
 
-    ball_start_speed_x: f32,
-    ball_start_speed_y: f32,
     bounce_speed_bonus: f32,
     max_ball_speed_x: f32,
     max_ball_speed_y: f32,
@@ -87,8 +86,6 @@ impl GameConfig {
             ball_color: Color::YELLOW_GREEN,
             ball_x: 0.,
 
-            ball_start_speed_x: -5.,
-            ball_start_speed_y: 3.,
             bounce_speed_bonus: 0.75,
             max_ball_speed_x: 15.,
             max_ball_speed_y: 10.,
@@ -96,6 +93,14 @@ impl GameConfig {
             left_pedal_color: Color::CYAN,
             right_pedal_color: Color::BISQUE,
         }
+    }
+
+    fn ball_start_speed_x(&self) -> f32 {
+        rand::thread_rng().gen_range(-5. ..-3.)
+    }
+
+    fn ball_start_speed_y(&self) -> f32 {
+        rand::thread_rng().gen_range(-7. ..7.)
     }
 
     fn init_game_config(mut commands: Commands, query: Query<&Window>) {
@@ -151,7 +156,7 @@ fn spawn_entities(
         pedal_sprite(config.left_pedal_color, config.left_pedal_x),
         PedalLeft,
         Pedal,
-        Collider,
+        Collider::Left,
         Velocity::zero(),
         Dimensions(Vec2::new(config.pedal_width, config.pedal_length)),
     ));
@@ -160,7 +165,7 @@ fn spawn_entities(
         pedal_sprite(config.right_pedal_color, config.right_pedal_x),
         PedalRight,
         Pedal,
-        Collider,
+        Collider::Right,
         Velocity::zero(),
         Dimensions(Vec2::new(config.pedal_width, config.pedal_length)),
     ));
@@ -192,7 +197,7 @@ fn spawn_entities(
             },
             ..default()
         },
-        Collider,
+        Collider::Top,
         Dimensions(Vec2::new(config.border_length, config.border_thickness)),
     ));
 
@@ -209,7 +214,7 @@ fn spawn_entities(
             },
             ..default()
         },
-        Collider,
+        Collider::Bottom,
         Dimensions(Vec2::new(config.border_length, config.border_thickness)),
     ));
 }
@@ -264,8 +269,8 @@ fn play_game(key_code: Res<Input<KeyCode>>, mut next_state: ResMut<NextState<Gam
 
 fn set_ball_velocity(mut query: Query<&mut Velocity, With<Ball>>, config: Res<GameConfig>) {
     if let Ok(mut velocity) = query.get_single_mut() {
-        velocity.x = config.ball_start_speed_x;
-        velocity.y = config.ball_start_speed_y;
+        velocity.x = config.ball_start_speed_x();
+        velocity.y = config.ball_start_speed_y();
     }
 }
 
@@ -317,33 +322,43 @@ fn compute_velocity(
 type OnlyCollider = (With<Collider>, Without<Ball>);
 type OnlyBall = (With<Ball>, Without<Collider>);
 fn ball_collision(
-    colliders: Query<(&Transform, &Dimensions, Option<&Velocity>), OnlyCollider>,
+    colliders: Query<(&Transform, &Dimensions, Option<&Velocity>, &Collider), OnlyCollider>,
     mut ball: Query<(&Transform, &Dimensions, &mut Velocity), OnlyBall>,
     config: Res<GameConfig>,
 ) {
     if let Ok((ball_transform, ball_dimensions, mut ball_velocity)) = ball.get_single_mut() {
-        for (collider_transform, collider_dimensions, maybe_velocity) in colliders.iter() {
+        for (collider_transform, collider_dimensions, maybe_velocity, collider_pos) in
+            colliders.iter()
+        {
             let collider_velocity = maybe_velocity.unwrap_or(&Velocity { x: 0., y: 0. });
             let relative_velocity_y = ball_velocity.y - collider_velocity.y;
-            match collide(
+
+            if collide(
                 collider_transform.translation,
                 collider_dimensions.0,
                 ball_transform.translation,
                 ball_dimensions.0,
-            ) {
-                Some(Collision::Top) | Some(Collision::Bottom) => {
-                    ball_velocity.y = -relative_velocity_y;
+            )
+            .is_some()
+            {
+                match collider_pos {
+                    Collider::Top => {
+                        ball_velocity.y = -relative_velocity_y;
+                    }
+                    Collider::Bottom => {
+                        ball_velocity.y = -relative_velocity_y;
+                    }
+                    Collider::Left => {
+                        ball_velocity.y += collider_velocity.y;
+                        ball_velocity.x = -ball_velocity.x + config.bounce_speed_bonus;
+                    }
+                    Collider::Right => {
+                        ball_velocity.y += collider_velocity.y;
+                        ball_velocity.x = -ball_velocity.x - config.bounce_speed_bonus;
+                    }
                 }
-                Some(Collision::Left) => {
-                    ball_velocity.y += collider_velocity.y;
-                    ball_velocity.x = -ball_velocity.x + config.bounce_speed_bonus;
-                }
-                Some(Collision::Right) => {
-                    ball_velocity.y += collider_velocity.y;
-                    ball_velocity.x = -ball_velocity.x - config.bounce_speed_bonus;
-                }
-                _ => (),
             }
+
             let vx_max = config.max_ball_speed_x;
             let vy_max = config.max_ball_speed_y;
             ball_velocity.x = ball_velocity.x.clamp(-vx_max, vx_max);
@@ -365,7 +380,12 @@ struct Pedal;
 struct Ball;
 
 #[derive(Component)]
-struct Collider;
+enum Collider {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
 
 #[derive(Component)]
 struct Dimensions(Vec2);
